@@ -39,7 +39,8 @@ def build_form_data(
     included_inputs: Dict[str, str] = {}
 ) -> Dict[str, str]:
     """
-    Take all form inputs and generate final form to submit.
+    Take all form inputs and generate final form to submit
+    
     The final form can be tweaked by providing inputs
     manually and/or excluding certain inputs
     """
