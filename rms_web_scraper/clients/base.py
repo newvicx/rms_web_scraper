@@ -6,7 +6,6 @@ from typing import Type
 from bs4 import BeautifulSoup
 from cachetools import TTLCache
 from httpx import AsyncClient, Cookies
-from pytoml_config import load_configuration
 
 from ..exceptions import SessionError
 from ..telerik import telerik_login_form
@@ -25,31 +24,30 @@ class BaseClient:
         - company_id (int): RMS company id for login
         - username (str): RMS username for login
         - password (str): RMS password for login
+        - login_url (str): Absolute path to RMS login screen
+        - ttl (int): Time in seconds session is valid for
+        - logger (logging.Logger): logger for client
 
     """
 
     def __init__(
         self,
-        config_path: str,
+        company_id: int,
+        username: str,
+        password: str,
         *,
-        company_id: int = None,
-        username: str = None,
-        password: str = None,
+        login_url: str = "https://rms-ngs.net/rms/Module/User/Login.aspx",
+        ttl: int = 108000,
         logger: logging.Logger = None
     ) -> None:
 
-        config = load_configuration(config_path=config_path)
-        company_id = company_id or config.company_id
-        username = username or config.username
-        password = password or config.password
         self._userinfo = (company_id, username, password)
+        self._login_url = login_url
         self._logger = logger or logging.getLogger(__name__)
 
         self._client = AsyncClient()
-        self._cache = TTLCache(maxsize=15, ttl=config.session.ttl)
+        self._cache = TTLCache(maxsize=15, ttl=ttl)
         self._session_lock = asyncio.Lock()
-
-        self._config = config
 
     async def aclose(self):
         await self._client.aclose()
@@ -69,7 +67,7 @@ class BaseClient:
                 self._logger.debug("No active session")
             
             # if no active session exists, get one
-            login_url = self._config.urls.login_url
+            login_url = self._login_url
             # clear the cookies on the client
             self._client._cookies.clear()
             response = await self._client.get(login_url)

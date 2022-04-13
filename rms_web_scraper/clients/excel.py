@@ -1,5 +1,7 @@
 import io
+import logging
 import os
+from pathlib import Path
 from typing import Dict, Tuple
 
 import pandas as pd
@@ -7,7 +9,6 @@ from bs4 import BeautifulSoup
 from httpx import Cookies
 
 from .base import BaseClient
-from ..exceptions import UnconfiguredReport
 from ..telerik import telerik_excel_report_form
 
 
@@ -20,23 +21,60 @@ class ExcelClient(BaseClient):
     supported
 
     Parameters
-        - company_id (int): RMS company id for login
-        - username (str): RMS username for login
-        - password (str): RMS password for login
+        - report_url (str): Absolute path to reports page
 
     """
 
-    async def get_report(self, report_name: str) -> pd.DataFrame:
+    def __init__(
+        self,
+        company_id: int,
+        username: str,
+        password: str,
+        *,
+        login_url: str = "https://rms-ngs.net/rms/Module/User/Login.aspx",
+        report_url: str = "https://rms-ngs.net/RMS/Module/Reports/ViewDynamicReport.aspx",
+        ttl: int = 108000,
+        logger: logging.Logger = None
+    ) -> None:
+        
+        super().__init__(
+            company_id,
+            username,
+            password,
+            login_url=login_url,
+            ttl=ttl,
+            logger=logger
+        )
+        self._report_url = report_url
+
+    async def get_report(
+        self,
+        report_name: str,
+        report_id: str,
+        event_target: str,
+        event_argument: str
+    ) -> pd.DataFrame:
         """
         Get report from web and convert directly into a
         DataFrame. The download file is not saved to disk.
 
         Parameters
-            - report_name (str): The report name spelled exactly
-            how it appears in RMS
+            - report_name (str): The report name exactly as it
+            appears in RMS
+            - report_id (str): The report id, must use chrom dev
+            tools to get id
+            - event_target: (str): The telerik event target for excel
+            reports. It should be consistent across reports
+            - event_argument: (str): The telerik event argument for
+            excel reports. It should be consistent across reports
         """
 
-        report_params = await self._get_excel_report_params(report_name)
+        report_params = await self._get_excel_report_params(
+            report_name,
+            report_id,
+            event_target,
+            event_argument
+        )
         report = await self._client.request(
             'POST',
             report_params[0],
@@ -48,17 +86,31 @@ class ExcelClient(BaseClient):
         file_stream = io.BytesIO(report.content)
         return pd.read_excel(file_stream)
 
-    async def download_report(self, report_name: str) -> None:
+    async def download_report(
+        self,
+        report_name: str,
+        report_id: str,
+        event_target: str,
+        event_argument: str,
+        save_dir: os.PathLike = os.path.join(Path.home(), "Downloads")
+    ) -> None:
         """
         Get report and save excel file to disk
 
         Parameters
-            - report_name (str): The report name spelled exactly
-            how it appears in RMS
+            - report_name (str): The report name exactly as it
+            appears in RMS
+            - report_id (str): The report id, must use chrom dev
+            tools to get id
         """
-        report_params = await self._get_excel_report_params(report_name)
         
-        filepath = os.path.join(self._config.report_dir, f"{report_name}.xlsx")
+        report_params = await self._get_excel_report_params(
+            report_name,
+            report_id,
+            event_target,
+            event_argument
+        )
+        filepath = os.path.join(save_dir, f"{report_name}.xlsx")
         with open(filepath, 'wb') as download:
             async with self._client.stream(
                 'POST',
@@ -73,8 +125,15 @@ class ExcelClient(BaseClient):
 
     async def _get_excel_report_params(
         self,
-        report_name: str
+        report_name: str,
+        report_id: str,
+        event_target: str,
+        event_argument: str
     ) -> Tuple[str, Dict[str, str], Dict[str, str], Cookies]:
+        """
+        Retrieve cached form information for excel report or make
+        request to load report and parse form
+        """
 
         # client blocks until session cookie is obtained
         session_cookies = await self._get_session()
@@ -87,18 +146,8 @@ class ExcelClient(BaseClient):
             return (*cached, session_cookies)
         except KeyError:
             pass
-        report_configs = self._config.reports
-        report_id = None
-        # get report id from config file
-        for report_config in report_configs:
-            if report_config['name'] == report_name:
-                report_id = report_config['id']
-                break
-        if not report_id:
-            raise UnconfiguredReport(
-                f"Cannot get report ID, {report_name} not in config"
-            )
-        report_url = self._config.urls.report_url
+        
+        report_url = self._report_url
         params = {
             'ID': report_id,
             'Report': report_name
@@ -108,8 +157,6 @@ class ExcelClient(BaseClient):
         # unknown at this point
         response = await self._client.get(report_url, params=params)
         soup = BeautifulSoup(response.content, 'html.parser')
-        event_target = self._config.telerik.excel.event_target
-        event_argument = self._config.telerik.excel.event_argument
         form_data = telerik_excel_report_form(
             soup,
             event_target=event_target,
