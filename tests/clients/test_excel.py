@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 
 import pandas as pd
 import pytest
+from pytoml_config import load_configuration
 
 from rms_web_scraper import ExcelClient
 
@@ -15,6 +17,7 @@ CONFIG_PATH = os.path.join(
     ),
     'test_config.toml'
 )
+config = load_configuration(CONFIG_PATH)
 
 
 @pytest.mark.asyncio
@@ -23,9 +26,21 @@ async def test_get_report():
     Test report can be downloaded and converted directly
     to a dataframe
     """
-    async with ExcelClient(CONFIG_PATH) as client:
-        test_report = client._config.test_report
-        frame = await client.get_report(test_report)
+    async with ExcelClient(
+        config.company_id,
+        config.username,
+        config.password
+    ) as client:
+        test_report = config.test_report
+        test_report_id = config.test_report_id
+        test_report_event_target = config.test_report_event_target
+        test_report_event_argument = config.test_report_event_argument
+        frame = await client.get_report(
+            test_report,
+            test_report_id,
+            test_report_event_target,
+            test_report_event_argument
+        )
         assert not frame.empty
 
 
@@ -35,11 +50,23 @@ async def test_download_report():
     Test report can be downloaded and saved as an excel
     file
     """
-    async with ExcelClient(CONFIG_PATH) as client:
-        test_report = client._config.test_report
-        await client.download_report(test_report)
+    async with ExcelClient(
+        config.company_id,
+        config.username,
+        config.password
+    ) as client:
+        test_report = config.test_report
+        test_report_id = config.test_report_id
+        test_report_event_target = config.test_report_event_target
+        test_report_event_argument = config.test_report_event_argument
+        await client.download_report(
+            test_report,
+            test_report_id,
+            test_report_event_target,
+            test_report_event_argument
+        )
         filepath = os.path.join(
-            client._config.report_dir, f"{test_report}.xlsx"
+            os.path.join(Path.home(), "Downloads"), f"{test_report}.xlsx"
         )
         assert os.path.exists(filepath)
         frame = pd.read_excel(filepath)

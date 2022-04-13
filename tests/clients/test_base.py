@@ -3,6 +3,7 @@ import os
 
 import pytest
 from httpx import Cookies
+from pytoml_config import load_configuration
 
 from rms_web_scraper.clients.base import BaseClient
 from rms_web_scraper.exceptions import SessionError
@@ -17,6 +18,7 @@ CONFIG_PATH = os.path.join(
     ),
     'test_config.toml'
 )
+config = load_configuration(CONFIG_PATH)
 
 
 @pytest.mark.asyncio
@@ -25,7 +27,11 @@ async def test_session_login():
     Test client can login, aquire a session, and cache
     the session cookies
     """
-    async with BaseClient(CONFIG_PATH) as client:
+    async with BaseClient(
+        config.company_id,
+        config.username,
+        config.password
+    ) as client:
         session_cookies = await client._get_session()
         assert isinstance(session_cookies, Cookies)
         cached_session = client._cache['active_session']
@@ -38,7 +44,12 @@ async def test_session_expire():
     Test client will renew session after session cookies
     have expired
     """
-    async with BaseClient(CONFIG_PATH) as client:
+    async with BaseClient(
+        config.company_id,
+        config.username,
+        config.password,
+        ttl=config.test_ttl
+    ) as client:
         session_cookies = await client._get_session()
         # ttl has been set to 2 seconds in test config file
         await asyncio.sleep(3)
@@ -55,7 +66,6 @@ async def test_unable_to_aquire_session():
     session
     """
     async with BaseClient(
-        CONFIG_PATH,
         company_id=11111,
         username='fakeuser',
         password='fakepassword'
