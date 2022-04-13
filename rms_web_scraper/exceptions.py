@@ -16,8 +16,3 @@ class NoInputs(ScraperException):
 class SessionError(ScraperException):
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
-
-
-class UnconfiguredReport(ScraperException):
-    def __init__(self, *args: object) -> None:
-        super().__init__(*args)
